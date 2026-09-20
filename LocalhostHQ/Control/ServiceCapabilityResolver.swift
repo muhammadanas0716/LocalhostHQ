@@ -17,7 +17,7 @@ struct ServiceCapabilityResolver: Sendable {
         hasCapturedLogs: Bool,
         currentUserID: uid_t = getuid()
     ) -> ServiceCapabilities {
-        let canOpen = listeningPort.isReachableViaLocalhost && (framework?.servesHTTP ?? true)
+        let canOpen = LocalService.servesBrowsableHTTP(listeningPort: listeningPort, framework: framework)
         let canReveal = process.workingDirectory != nil && process.workingDirectory != "/"
 
         let restriction = self.restriction(

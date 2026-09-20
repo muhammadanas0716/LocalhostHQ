@@ -3,35 +3,58 @@
 A native macOS control center for every development server listening on localhost.
 
 Open it and your local environment is already there: what is running, on which port, from which
-project, on which branch, and what it costs in CPU and memory. No configuration, no registration
-step, no per-project setup.
+project, on which branch, what it costs, what it is printing, and what you can safely do to it.
+No configuration, no registration step, no per-project setup.
 
-Part 1 (discovery) is implemented. Parts 2 and 3 are not.
+Part 1 (discovery) and Part 2 (control, logging, lifecycle) are implemented. Part 3 is not.
 
 ---
 
 ## What it does
 
+### Discovery — what exists
+
 - Discovers every TCP socket in `LISTEN` state, de-duplicating dual-stack (IPv4 + IPv6) listeners
 - Maps each port to its owning process: executable, full `argv`, parent, start time
 - Resolves the process's working directory, and from it the package root and repository root
   (kept distinct — a monorepo service reports `apps/web` *and* `dicee`)
-- Names the service from its manifest (`@dicee/web` → **web**), falling back to directory, then process
+- Names the service from its manifest (`@dicee/web` → **web**), falling back to directory,
+  framework, then process
 - Detects framework and runtime heuristically, with a confidence score
 - Reads Git repository root and current branch (including detached HEAD)
 - Samples CPU, resident memory and uptime
 - Groups services by repository; loose dev servers and infrastructure get their own sections
 - Separates macOS/app daemons from your own work, hidden behind a toggle
-- Menu bar item with a live count and a compact summary
-- Search across project, service, framework, port, path, branch and PID
-- Open in Browser / Reveal in Finder / Open in Terminal
 - Refreshes every 2 seconds
 
-### Not in Part 1
+### Control — what you can safely do
 
-Logs, killing or restarting processes, starting projects, saved environments, Docker management,
-request inspection, historical analytics, remote machines. The architecture leaves room for them;
-none of it is stubbed or faked.
+- **Stop** (SIGTERM) and, as a separate explicit action, **Force Stop** (SIGKILL)
+- **Restart**, when the original launch command can be reconstructed with confidence
+- **Restart Project** / **Stop Project** for every eligible service in a repository
+- Process trees, showing exactly which processes an action would affect
+- Port conflict detection, naming the owning project and offering to free the port
+- Every destructive action verifies process identity first (see *Process safety*)
+
+### Logging — what it is saying
+
+- stdout and stderr captured live for anything Localhost HQ launches
+- Search, level filters, follow/wrap, copy line
+- Heuristic error and warning highlighting
+- Deterministic diagnosis of common failures (`EADDRINUSE`, `MODULE_NOT_FOUND`, …)
+- Bounded 10,000-line ring buffer per service
+
+### Lifecycle — what happened to it
+
+- Distinguishes an intentional stop from an unexpected exit
+- Exit codes where genuinely knowable
+- A session-scoped event log per service
+
+### Not implemented
+
+Saved environments, startup orchestration, `.env` editing, Docker Compose management, request
+proxying/inspection, persisted history, remote machines, AI explanations. The architecture leaves
+room for them; none of it is stubbed or faked.
 
 ---
 
@@ -94,7 +117,82 @@ appears with whatever the kernel does surrender, and the inspector marks it *lim
 
 ---
 
+## Process safety
+
+Signalling the wrong process is the worst thing this app could do, so three rules constrain it.
+
+**1. Identity is verified before every destructive action.** A PID is not an identity — PIDs are
+recycled, and the gap between discovering a service and acting on it is easily long enough. Each
+service carries a `ProcessInstanceIdentity` of *PID + start time + executable*, captured at
+discovery and re-checked against the live process immediately before any signal. A mismatch aborts
+with "This process has changed since it was discovered." A process whose start time the kernel
+would not surrender cannot be verified, and so cannot be controlled at all.
+
+**2. The blast radius is the job, never the terminal.** A dev server is rarely one process:
+
+```
+zsh              ← the terminal you typed in. Must never be signalled.
+└── pnpm         ← part of the job
+    └── node
+        └── next-server  :3000
+```
+
+The boundary used is the **process group**. Shells with job control put each job in its own group,
+so an interactive shell is never in its child job's group, while a wrapper script legitimately is —
+and *must* be stopped, or it is orphaned. Two further guards cover shells started without job
+control: an ancestor is never adopted if it is a session leader (a login or interactive shell always
+is), nor if it is in a small deny-list (`launchd`, `sshd`, `login`, terminal emulators, this app).
+Only processes owned by the current user are ever signalled. The resulting `ControlRoot` and its
+members are shown in the inspector's process tree, so the blast radius is visible before you act.
+
+**3. Escalation is never silent.** Stop sends SIGTERM and waits 5 seconds. If the process is still
+alive it reports that and offers a choice; it does not fall through to SIGKILL. Force Stop is a
+separate action, behind a confirmation that states the consequence.
+
+### Restart
+
+Restart is only offered when the original command can be reconstructed with confidence. The command
+is recovered from the **control root**, not the listening process — Next.js rewrites its worker's
+`argv` to `next-server (v15.0.3)`, which is a label, not a command, and rerunning it would fail.
+Such rewritten titles are detected and rejected outright rather than producing a restart that
+breaks.
+
+The flow is: verify identity → stop the job → confirm the port is actually free → relaunch with
+pipes attached → wait for rediscovery. Because the new process has a different PID, services carry a
+`ServiceKey` — a logical identity anchored on the package directory — that survives the change, so
+selection, logs, runtime state and history follow the service across a restart. A framework that
+falls back to another port (`3000 in use, trying 3001`) is recognised by its shared anchor and
+reported as "restarted on port 3001".
+
+**Environment variables are not reproduced.** The environment of a running process is not
+recoverable through public macOS APIs, and reading another process's environment would leak secrets
+besides. A relaunch inherits Localhost HQ's environment plus the recovered working directory. That
+is correct for a shell-launched dev server but will not reproduce variables exported only in that
+shell. The app states this rather than pretending otherwise.
+
+### Logging
+
+Localhost HQ can only stream the output of processes it started itself. macOS provides no way to
+attach to the stdout of a process started elsewhere, and there is no honest workaround — so a
+service adopted from a terminal shows an explanation and a **Restart and Capture Logs** button
+rather than a fake empty log.
+
+Output is delivered in batches, one per pipe read, so 50,000 lines arrive as ~130 UI updates rather
+than 50,000. Retention is a 10,000-entry ring buffer per service; the viewer is a `LazyVStack`, so
+only visible lines are built.
+
+---
+
 ## Architecture
+
+Part 2 keeps four concerns separate rather than growing the discovery service:
+
+```
+DISCOVERY   what exists?
+CONTROL     what can we safely do to it?
+LOGGING     what is it outputting?
+LIFECYCLE   what happened to it?
+```
 
 ```
 Discovery/          how facts are obtained
@@ -109,16 +207,40 @@ Discovery/          how facts are obtained
   MetricsCollector       CPU rate from rusage deltas
   ServiceOriginClassifier   developer vs. system
 
+Control/            what may safely be done
+  ProcessTable              whole process table in one sysctl (~0.8 ms)
+  ProcessTreeInspector      trees, ancestors, control-root selection
+  ProcessController         identity verification and signalling, an actor
+  LaunchDescriptor(+Builder)  reconstructing the original command
+  ServiceCapabilityResolver  one place that decides what the UI may offer
+  PortConflictResolver      who owns a port, and is it safe to free
+  ServiceController         the facade views actually call
+
+Logging/            what it is saying
+  ProcessOutputCapture      launching with pipes, line assembly, ANSI stripping
+  LogBuffer                 bounded ring buffer
+  LogStore / LogManager     observable per-service logs, keyed logically
+  LogClassifier             level heuristics and deterministic diagnosis
+
+Lifecycle/          what happened to it
+  LifecycleTracker          runtime state, intent, unexpected-exit detection
+  ServiceEvent              session-scoped history
+
 Services/           composition
   LocalhostDiscoveryService   the pipeline, an actor
   ServiceGrouper              repository / dev / infrastructure sections
   ServiceFilter               search
   ServiceActions              browser, Finder, Terminal
 
+App/AppEnvironment            composition root, wires the four systems
 Stores/ServicesStore          @MainActor @Observable, owns the refresh loop
 Models/                       value types, all Sendable
-Views/                        SwiftUI, no discovery logic
+Views/                        SwiftUI, no control logic
 ```
+
+Views call `await controller.restart(service)`, never `kill(pid, SIGTERM)`. Capability flags
+(`canStop`, `canRestart`, `canStreamLogs`, …) are resolved once in `ServiceCapabilityResolver`, so
+no view re-derives rules like "don't offer Restart to Postgres" from framework names.
 
 The pipeline:
 
@@ -216,6 +338,20 @@ Python; Rails, Rust (Cargo), Go; PostgreSQL, MySQL/MariaDB, MongoDB, Redis, Dock
   resolves to the repository root.
 - **Docker containers are attributed to the Docker daemon**, not to the individual container.
 - **Uptime is process start time**, not time since the port was bound.
+- **Logs only exist for processes Localhost HQ launched.** See *Logging* above. Restarting a
+  service through the app is what makes its output available.
+- **Exit codes are only known for processes Localhost HQ launched.** macOS does not report the exit
+  status of a process we are not the parent of, so for anything else the exit is reported without a
+  code rather than with an invented one.
+- **Environment variables are not reproduced on restart.** See *Restart* above.
+- **Restart is refused when the command cannot be recovered confidently** — a rewritten process
+  title, a missing working directory, or a binary that no longer exists. The inspector shows the
+  recovered command and its confidence so the refusal is explainable.
+- **A detached grandchild that reparents to launchd escapes the control root**, since it leaves the
+  process group. Stopping the job will not reach it. This is deliberate: widening the net would risk
+  signalling unrelated processes.
+- **No notifications.** Lifecycle events are surfaced in the app rather than as system
+  notifications; requesting notification permission was not worth it for Part 2.
 
 ---
 
@@ -225,7 +361,28 @@ Python; Rails, Rust (Cargo), Go; PostgreSQL, MySQL/MariaDB, MongoDB, Redis, Dock
 xcodebuild -scheme LocalhostHQ -destination 'platform=macOS' test
 ```
 
-117 tests (Swift Testing) covering the logic that does not need live processes:
+190 tests (Swift Testing) covering the logic that does not need live processes.
+
+Part 2 adds:
+
+- **Process identity** — PID reuse rejected via start time, differing executables rejected,
+  unverifiable processes refused, `timeval` precision tolerated
+- **Control root selection** — the `zsh → pnpm → node → next-server` fixture resolves to `pnpm`
+  with the shell excluded; wrapper scripts in the same job *are* adopted; session leaders, other
+  users' processes and deny-listed names are refused; parent cycles terminate
+- **Launch descriptors** — `pnpm dev`, `npm run dev`, `bun dev`, `uvicorn main:app --reload`,
+  `python manage.py runserver`, `cargo run`, `go run .`; rewritten process titles rejected; missing
+  directories and executables rejected
+- **Capabilities** — dev servers controllable, system services conservative, low-confidence
+  commands block restart but not stop, databases never offer a browser action
+- **Log classification** — errors, warnings, successful access logs not mis-flagged as errors,
+  `EADDRINUSE` diagnosed with the port extracted, no false diagnosis on healthy output
+- **Log buffering** — eviction at capacity, repeated wrapping, drop counting, clamped capacity
+- **Lifecycle transitions** — `running → stopping → stopped`, `running → restarting → running`,
+  unannounced disappearance as an unexpected exit, and the restart window *not* reported as a crash
+- **Service keys** — anchor precedence, and surviving a port change
+
+Part 1 coverage:
 
 - **lsof parsing** — IPv4, IPv6 bracket form, wildcards, zone identifiers, multi-port processes,
   names containing spaces, malformed and truncated output, connected-socket rejection,

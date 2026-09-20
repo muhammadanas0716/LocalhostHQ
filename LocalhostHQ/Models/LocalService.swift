@@ -79,7 +79,15 @@ struct LocalService: Identifiable, Sendable, Hashable {
     /// Only offered for services that actually speak HTTP and are reachable
     /// through `localhost`.
     var supportsBrowserOpen: Bool {
+        Self.servesBrowsableHTTP(listeningPort: listeningPort, framework: framework)
+    }
+
+    /// The single definition of the rule, shared with
+    /// `ServiceCapabilityResolver` so it is not restated there.
+    static func servesBrowsableHTTP(listeningPort: ListeningPort, framework: Framework?) -> Bool {
         guard listeningPort.isReachableViaLocalhost else { return false }
+        // An unrecognised process on a local port is more likely to be a web
+        // server than not, so the benefit of the doubt goes to offering it.
         return framework?.servesHTTP ?? true
     }
 
