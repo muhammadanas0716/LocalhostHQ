@@ -26,6 +26,8 @@ actor LocalhostDiscoveryService {
         let detection: FrameworkDetection?
         let ranking: [FrameworkDetection]
         let origin: ServiceOrigin
+        let controlRoot: ControlRoot?
+        let launchDescriptor: LaunchDescriptor?
     }
 
     private let portScanner: PortScanning
@@ -36,6 +38,12 @@ actor LocalhostDiscoveryService {
     private let gitInspector: GitInspecting
     private let originClassifier: ServiceOriginClassifier
     private let metricsCollector: MetricsCollector
+    private let processTable: ProcessTableReading
+    private let treeInspector: ProcessTreeInspector
+    private let launchBuilder: LaunchDescriptorBuilder
+    private let capabilityResolver: ServiceCapabilityResolver
+    /// Keys whose logs Localhost HQ is capturing, set by the controller.
+    private var capturedLogKeys: Set<ServiceKey> = []
 
     private var metadataCache: [ServiceIdentifier: EnrichedMetadata] = [:]
     /// Keyed by the directory queried, since git resolves any path to its root.
@@ -50,6 +58,9 @@ actor LocalhostDiscoveryService {
         frameworkDetector: FrameworkDetector = FrameworkDetector(),
         gitInspector: GitInspecting = GitInspector(),
         originClassifier: ServiceOriginClassifier = ServiceOriginClassifier(),
+        processTable: ProcessTableReading = SystemProcessTable(),
+        launchBuilder: LaunchDescriptorBuilder = LaunchDescriptorBuilder(),
+        capabilityResolver: ServiceCapabilityResolver = ServiceCapabilityResolver(),
         gitCacheLifetime: Duration = .seconds(20)
     ) {
         self.portScanner = portScanner
@@ -60,7 +71,22 @@ actor LocalhostDiscoveryService {
         self.gitInspector = gitInspector
         self.originClassifier = originClassifier
         self.metricsCollector = MetricsCollector(inspector: processInspector)
+        self.processTable = processTable
+        self.treeInspector = ProcessTreeInspector(table: processTable)
+        self.launchBuilder = launchBuilder
+        self.capabilityResolver = capabilityResolver
         self.gitCache = TimedCache(lifetime: gitCacheLifetime)
+    }
+
+    /// Told by the controller which services it is capturing output for, so
+    /// capabilities can report live logs accurately.
+    func setCapturedLogKeys(_ keys: Set<ServiceKey>) {
+        capturedLogKeys = keys
+    }
+
+    /// The process tree for a service, for the inspector's tree view.
+    func processTree(for pid: Int32, listeningPorts: [Int32: Int]) -> ProcessNode? {
+        treeInspector.tree(rootedAt: pid, in: processTable.snapshot(), listeningPorts: listeningPorts)
     }
 
     /// One full refresh. Never throws: a failure of any single stage degrades
@@ -73,6 +99,10 @@ actor LocalhostDiscoveryService {
             return []
         }
 
+        // One table read per refresh (~0.8 ms), shared by every service's
+        // control-root resolution.
+        let tableSnapshot = processTable.snapshot()
+
         var services: [LocalService] = []
         services.reserveCapacity(ports.count)
 
@@ -82,22 +112,41 @@ actor LocalhostDiscoveryService {
             guard let process = processInspector.snapshot(pid: port.pid) else { continue }
 
             let identity = ServiceIdentifier(pid: port.pid, port: port.port)
-            let metadata = await metadata(for: identity, process: process, port: port)
+            let metadata = await metadata(
+                for: identity,
+                process: process,
+                port: port,
+                tableSnapshot: tableSnapshot
+            )
 
             let git = await gitInfo(for: metadata.project)
-
-            services.append(
-                LocalService(
-                    id: identity,
-                    listeningPort: port,
-                    process: process,
-                    project: metadata.project,
-                    detection: metadata.detection,
-                    git: git,
-                    metrics: metricsCollector.metrics(for: port.pid),
-                    origin: metadata.origin
-                )
+            let key = ServiceKey(
+                anchor: LocalService.anchor(project: metadata.project, process: process),
+                port: port.port
             )
+
+            var service = LocalService(
+                id: identity,
+                listeningPort: port,
+                process: process,
+                project: metadata.project,
+                detection: metadata.detection,
+                git: git,
+                metrics: metricsCollector.metrics(for: port.pid),
+                origin: metadata.origin
+            )
+            service.controlRoot = metadata.controlRoot
+            service.launchDescriptor = metadata.launchDescriptor
+            service.capabilities = capabilityResolver.capabilities(
+                process: process,
+                origin: metadata.origin,
+                framework: metadata.detection?.framework,
+                listeningPort: port,
+                controlRoot: metadata.controlRoot,
+                launchDescriptor: metadata.launchDescriptor,
+                hasCapturedLogs: capturedLogKeys.contains(key)
+            )
+            services.append(service)
         }
 
         prune(to: services)
@@ -115,7 +164,8 @@ actor LocalhostDiscoveryService {
     private func metadata(
         for identity: ServiceIdentifier,
         process: ProcessSnapshot,
-        port: ListeningPort
+        port: ListeningPort,
+        tableSnapshot: [ProcessTableEntry]
     ) async -> EnrichedMetadata {
         if let cached = metadataCache[identity], cached.startedAt == process.startedAt {
             return cached
@@ -155,12 +205,29 @@ actor LocalhostDiscoveryService {
             framework: detection?.framework
         )
 
+        // Control root and launch command are static for the life of the
+        // process, so they are cached alongside the rest of the metadata rather
+        // than recomputed every two seconds.
+        let controlRoot = origin == .developer
+            ? treeInspector.controlRoot(for: process.pid, in: tableSnapshot)
+            : nil
+
+        // The command is recovered from the control root, not the leaf: that is
+        // what the developer actually typed, and relaunching the leaf would
+        // drop the supervisor above it.
+        let launchSource = controlRoot.flatMap { root in
+            root.pid == process.pid ? process : processInspector.snapshot(pid: root.pid)
+        }
+        let launchDescriptor = launchSource.flatMap { launchBuilder.descriptor(for: $0) }
+
         let metadata = EnrichedMetadata(
             startedAt: process.startedAt,
             project: project,
             detection: detection,
             ranking: ranking,
-            origin: origin
+            origin: origin,
+            controlRoot: controlRoot,
+            launchDescriptor: launchDescriptor
         )
         metadataCache[identity] = metadata
         return metadata

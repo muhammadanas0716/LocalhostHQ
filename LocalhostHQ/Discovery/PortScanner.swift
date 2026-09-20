@@ -4,6 +4,12 @@ import OSLog
 protocol PortScanning: Sendable {
     /// Every TCP socket in `LISTEN` state, one entry per process/port.
     func listeningPorts() async -> [ListeningPort]
+    /// Whoever is listening on one specific port, scanned fresh.
+    ///
+    /// Used when a restart is about to bind a port: the last discovery snapshot
+    /// may be up to a refresh interval stale, which is exactly long enough to
+    /// miss the process that just took it.
+    func listeners(onPort port: Int) async -> [ListeningPort]
 }
 
 /// Discovers listening sockets via `lsof`.
@@ -27,12 +33,21 @@ struct LsofPortScanner: PortScanning {
     }
 
     func listeningPorts() async -> [ListeningPort] {
+        await scan(selector: "-iTCP")
+    }
+
+    func listeners(onPort port: Int) async -> [ListeningPort] {
+        guard (1...65_535).contains(port) else { return [] }
+        return await scan(selector: "-iTCP:\(port)")
+    }
+
+    private func scan(selector: String) async -> [ListeningPort] {
         let arguments = [
             "-nP",                              // numeric hosts and ports, no DNS
             "-w",                               // suppress warnings about unreadable paths
             "+c", "0",                          // never truncate the command name
             "-F", LsofFieldParser.fieldSelector,
-            "-iTCP",
+            selector,
             "-sTCP:LISTEN",
         ]
 

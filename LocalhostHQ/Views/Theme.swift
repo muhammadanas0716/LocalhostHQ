@@ -87,6 +87,8 @@ struct ServiceGlyph: View {
     var symbolName: String
     var size: CGFloat = 30
     var showsStatusDot: Bool = true
+    /// Reflects runtime state, not just "discovered".
+    var statusColor: Color = Theme.running
 
     var body: some View {
         RoundedRectangle(cornerRadius: Theme.chipCornerRadius, style: .continuous)
@@ -104,7 +106,7 @@ struct ServiceGlyph: View {
             .overlay(alignment: .bottomTrailing) {
                 if showsStatusDot {
                     Circle()
-                        .fill(Theme.running)
+                        .fill(statusColor)
                         .frame(width: size * 0.26, height: size * 0.26)
                         .overlay {
                             Circle().strokeBorder(Theme.surface, lineWidth: size * 0.065)

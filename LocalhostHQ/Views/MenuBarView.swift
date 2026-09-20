@@ -110,10 +110,17 @@ struct MenuBarView: View {
 }
 
 /// One service line in the menu bar popover.
+///
+/// Restart is the only control offered here; anything destructive lives in the
+/// context menu, and logs belong in a window rather than a popover.
 private struct MenuBarServiceRow: View {
     let service: LocalService
     let action: () -> Void
+
+    @Environment(AppEnvironment.self) private var app
     @State private var isHovering = false
+
+    private var state: ServiceRuntimeState { app.lifecycle.state(for: service.key) }
 
     var body: some View {
         Button(action: action) {
@@ -130,8 +137,8 @@ private struct MenuBarServiceRow: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
-                    if !service.subtitle.isEmpty {
-                        Text(service.subtitle)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
@@ -139,6 +146,16 @@ private struct MenuBarServiceRow: View {
                 }
 
                 Spacer(minLength: 8)
+
+                if isHovering, service.capabilities.canRestart {
+                    IconButton(
+                        symbol: "arrow.clockwise",
+                        help: "Restart",
+                        isDisabled: app.controller.isBusy(service.key)
+                    ) {
+                        Task { await app.controller.restart(service) }
+                    }
+                }
 
                 PortBadge(port: service.port, isProminent: isHovering)
             }
@@ -154,6 +171,12 @@ private struct MenuBarServiceRow: View {
         .padding(.horizontal, 7)
         .onHover { isHovering = $0 }
         .help(service.supportsBrowserOpen ? "Open in browser" : "Show in dashboard")
+        .contextMenu { ServiceContextMenu(service: service) }
+    }
+
+    private var subtitle: String {
+        if case .running = state { return service.subtitle }
+        return state.label
     }
 }
 
@@ -190,10 +213,12 @@ private struct MenuBarActionButton: View {
 
 #Preview("Menu bar") {
     MenuBarView()
+        .environment(AppEnvironment.preview(services: SampleData.all))
         .environment(ServicesStore.preview(services: SampleData.all))
 }
 
 #Preview("Menu bar – empty") {
     MenuBarView()
+        .environment(AppEnvironment.preview(services: []))
         .environment(ServicesStore.preview(services: []))
 }

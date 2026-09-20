@@ -4,39 +4,56 @@ enum DashboardWindow {
     static let identifier = "dashboard"
 }
 
+enum LogWindow {
+    static let identifier = "logs"
+}
+
 @main
 struct LocalhostHQApp: App {
-    /// Owned here so the menu bar and the dashboard observe the same state and
-    /// share one refresh loop.
-    @State private var store = ServicesStore()
+    /// Owned here so the menu bar, dashboard and log windows all observe the
+    /// same state and share one refresh loop.
+    @State private var environment = AppEnvironment()
 
     var body: some Scene {
         Window(AppInfo.displayName, id: DashboardWindow.identifier) {
             DashboardView()
-                .environment(store)
-                .frame(minWidth: 640, minHeight: 400)
-                .task { store.startMonitoring() }
+                .environment(environment)
+                .environment(environment.services)
+                .frame(minWidth: 680, minHeight: 420)
+                .task { environment.start() }
         }
-        .defaultSize(width: 980, height: 640)
+        .defaultSize(width: 1_020, height: 660)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(after: .toolbar) {
                 Button("Refresh Now") {
-                    Task { await store.refresh() }
+                    Task { await environment.services.refresh() }
                 }
                 .keyboardShortcut("r", modifiers: .command)
             }
         }
 
+        WindowGroup(id: LogWindow.identifier, for: ServiceKey.self) { $key in
+            LogWindowView(serviceKey: key)
+                .environment(environment)
+                .environment(environment.services)
+                .frame(minWidth: 520, minHeight: 320)
+        }
+        .defaultSize(width: 860, height: 540)
+
         MenuBarExtra {
-            MenuBarView().environment(store)
+            MenuBarView()
+                .environment(environment)
+                .environment(environment.services)
         } label: {
-            MenuBarLabel(count: store.developerServiceCount)
+            MenuBarLabel(count: environment.services.developerServiceCount)
         }
         .menuBarExtraStyle(.window)
 
         Settings {
-            SettingsView().environment(store)
+            SettingsView()
+                .environment(environment)
+                .environment(environment.services)
         }
     }
 }
@@ -53,5 +70,40 @@ private struct MenuBarLabel: View {
                 .monospacedDigit()
         }
         .accessibilityLabel("\(AppInfo.displayName), \(count) services")
+    }
+}
+
+extension ServiceKey: Codable {
+    private enum CodingKeys: String, CodingKey { case kind, path, port }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let kind = try container.decode(String.self, forKey: .kind)
+        let path = try container.decodeIfPresent(String.self, forKey: .path) ?? ""
+        port = try container.decode(Int.self, forKey: .port)
+        anchor = switch kind {
+        case "package": .package(path)
+        case "directory": .directory(path)
+        case "executable": .executable(path)
+        default: .port
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(port, forKey: .port)
+        switch anchor {
+        case .package(let path):
+            try container.encode("package", forKey: .kind)
+            try container.encode(path, forKey: .path)
+        case .directory(let path):
+            try container.encode("directory", forKey: .kind)
+            try container.encode(path, forKey: .path)
+        case .executable(let path):
+            try container.encode("executable", forKey: .kind)
+            try container.encode(path, forKey: .path)
+        case .port:
+            try container.encode("port", forKey: .kind)
+        }
     }
 }

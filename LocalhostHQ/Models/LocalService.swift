@@ -34,6 +34,16 @@ struct LocalService: Identifiable, Sendable, Hashable {
     let git: GitInfo?
     let metrics: ProcessMetrics?
     let origin: ServiceOrigin
+    /// Which processes belong to this service and may be signalled.
+    /// `nil` when no safe root could be established.
+    var controlRoot: ControlRoot?
+    /// Reconstructed launch command, when one could be recovered.
+    var launchDescriptor: LaunchDescriptor?
+    /// What the UI is allowed to offer.
+    var capabilities: ServiceCapabilities = .none
+
+    /// Identity to verify before any destructive action.
+    var instanceIdentity: ProcessInstanceIdentity { process.instanceIdentity }
 
     var port: Int { listeningPort.port }
     var pid: Int32 { process.pid }

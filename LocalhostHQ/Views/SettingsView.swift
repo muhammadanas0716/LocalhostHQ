@@ -77,5 +77,6 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+        .environment(AppEnvironment.preview(services: SampleData.all))
         .environment(ServicesStore.preview(services: SampleData.all))
 }

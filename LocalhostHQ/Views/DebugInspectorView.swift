@@ -7,6 +7,8 @@ import SwiftUI
 struct DebugInspectorView: View {
     let service: LocalService
     let ranking: [FrameworkDetection]
+    var controlRoot: ControlRoot?
+    var launchDescriptor: LaunchDescriptor?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -26,6 +28,31 @@ struct DebugInspectorView: View {
                                 .textSelection(.enabled)
                         }
                         .font(.system(size: 10, design: .monospaced))
+                    }
+                }
+            }
+
+            if let controlRoot {
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionLabel(text: "Control root")
+                    VStack(alignment: .leading, spacing: 3) {
+                        debugLine("PID", String(controlRoot.pid))
+                        debugLine("Name", controlRoot.name)
+                        debugLine("Reason", controlRoot.reason)
+                        debugLine("Members", controlRoot.memberPIDs.map(String.init).joined(separator: ", "))
+                    }
+                }
+            }
+
+            if let launchDescriptor {
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionLabel(text: "Launch descriptor")
+                    VStack(alignment: .leading, spacing: 3) {
+                        debugLine("Executable", launchDescriptor.executableURL.path)
+                        debugLine("Arguments", launchDescriptor.arguments.joined(separator: " "))
+                        debugLine("Directory", Format.path(launchDescriptor.workingDirectory.path))
+                        debugLine("Confidence", launchDescriptor.confidence.label)
+                        debugLine("Recovered from", launchDescriptor.recoveredFrom)
                     }
                 }
             }
@@ -60,6 +87,18 @@ struct DebugInspectorView: View {
                 }
             }
         }
+    }
+
+    private func debugLine(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(label)
+                .frame(width: 92, alignment: .leading)
+                .foregroundStyle(Theme.textTertiary)
+            Text(value)
+                .foregroundStyle(Theme.textSecondary)
+                .textSelection(.enabled)
+        }
+        .font(.system(size: 10, design: .monospaced))
     }
 
     private var lines: [(String, String)] {

@@ -80,6 +80,9 @@ struct MetricsCollectorTests {
 private struct StubPortScanner: PortScanning {
     let ports: [ListeningPort]
     func listeningPorts() async -> [ListeningPort] { ports }
+    func listeners(onPort port: Int) async -> [ListeningPort] {
+        ports.filter { $0.port == port }
+    }
 }
 
 private struct StubProcessInspector: ProcessInspecting {

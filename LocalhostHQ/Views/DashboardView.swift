@@ -2,12 +2,16 @@ import SwiftUI
 
 /// The main window: grouped services with a trailing inspector.
 struct DashboardView: View {
+    @Environment(AppEnvironment.self) private var app
     @Environment(ServicesStore.self) private var store
-    @State private var selection: ServiceIdentifier?
+    /// Selection is keyed logically, not by PID, so a restart does not clear it.
+    @State private var selection: ServiceKey?
     @State private var frameworkRanking: [FrameworkDetection] = []
     @AppStorage("showsDebugInspector") private var showsDebugInspector = false
 
     var body: some View {
+        @Bindable var controller = app.controller
+
         VStack(spacing: 0) {
             searchBar
             content
@@ -23,9 +27,32 @@ struct DashboardView: View {
                     ServiceDetailView(service: service, frameworkRanking: frameworkRanking)
                 }
             }
-            .inspectorColumnWidth(min: 290, ideal: 340, max: 430)
+            .inspectorColumnWidth(min: 290, ideal: 345, max: 440)
         }
         .task(id: selection) { await loadRanking() }
+        .sheet(item: $controller.forceStopPrompt) { prompt in
+            ForceStopSheet(
+                prompt: prompt,
+                onKeepWaiting: { controller.forceStopPrompt = nil },
+                onForceStop: { Task { await controller.forceStop(prompt) } }
+            )
+        }
+        .sheet(item: Binding(
+            get: { controller.portConflict.map(IdentifiedConflict.init) },
+            set: { if $0 == nil { controller.portConflict = nil } }
+        )) { wrapper in
+            PortConflictSheet(
+                conflict: wrapper.conflict,
+                onCancel: { controller.portConflict = nil },
+                onStopOwner: { Task { await controller.freePort(wrapper.conflict) } },
+                onInspect: wrapper.conflict.ownerService.map { owner in
+                    { selection = owner.key; controller.portConflict = nil }
+                }
+            )
+        }
+        .sheet(item: $controller.projectReport) { report in
+            ProjectReportSheet(report: report) { controller.projectReport = nil }
+        }
         .preferredColorScheme(.dark)
     }
 
@@ -88,7 +115,10 @@ struct DashboardView: View {
         guard let selection else { return nil }
         // Look through all services, not just visible ones: a selected row must
         // not vanish from the inspector merely because the search narrowed.
-        return store.services.first { $0.id == selection }
+        // Falls back to the last known snapshot so a service that just exited
+        // stays inspectable long enough to read why.
+        return store.services.first { $0.key == selection }
+            ?? app.lifecycle.lastKnown[selection]
     }
 
     private var emptyReason: EmptyStateView.Reason {
@@ -136,12 +166,14 @@ struct DashboardView: View {
 
 #Preview("Dashboard") {
     DashboardView()
+        .environment(AppEnvironment.preview(services: SampleData.all))
         .environment(ServicesStore.preview(services: SampleData.all))
         .frame(width: 940, height: 600)
 }
 
 #Preview("Empty") {
     DashboardView()
+        .environment(AppEnvironment.preview(services: []))
         .environment(ServicesStore.preview(services: []))
         .frame(width: 940, height: 600)
 }

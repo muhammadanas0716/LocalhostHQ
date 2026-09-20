@@ -48,6 +48,12 @@ final class ServicesStore {
 
     private var refreshTask: Task<Void, Never>?
 
+    /// Set once the control layer exists. The store drives lifecycle
+    /// reconciliation because it is what knows when a refresh completed.
+    private weak var lifecycle: LifecycleTracker?
+    private weak var controller: ServiceController?
+    private weak var logs: LogManager?
+
     init(
         discovery: LocalhostDiscoveryService = LocalhostDiscoveryService(),
         grouper: ServiceGrouper = ServiceGrouper(),
@@ -60,14 +66,36 @@ final class ServicesStore {
         self.refreshInterval = refreshInterval
     }
 
+    /// Connects the Part 2 systems. Kept separate from `init` to avoid a
+    /// circular dependency: the controller needs the tracker, and the store
+    /// needs both.
+    func connect(lifecycle: LifecycleTracker, controller: ServiceController, logs: LogManager) {
+        self.lifecycle = lifecycle
+        self.controller = controller
+        self.logs = logs
+    }
+
+    /// The process tree for a service, for the inspector.
+    func processTree(for service: LocalService) async -> ProcessNode? {
+        let ports = Dictionary(services.map { ($0.pid, $0.port) }, uniquingKeysWith: { first, _ in first })
+        return await discovery.processTree(for: service.pid, listeningPorts: ports)
+    }
+
     // MARK: - Preview seam
 
     /// Builds a store populated with fixed data and no refresh loop, for
     /// previews and tests.
     static func preview(services: [LocalService]) -> ServicesStore {
         let store = ServicesStore()
-        store.apply(services)
+        store.applyForPreview(services)
         return store
+    }
+
+    /// Seeds fixed services without running lifecycle reconciliation.
+    func applyForPreview(_ sample: [LocalService]) {
+        services = sample
+        lastRefreshedAt = Date()
+        rebuildGroups()
     }
 
     // MARK: - Lifecycle
@@ -101,6 +129,12 @@ final class ServicesStore {
         isRefreshing = true
         defer { isRefreshing = false }
 
+        // Capability resolution needs to know which services we are capturing
+        // output for, since that is what makes live logs possible.
+        if let controller {
+            await discovery.setCapturedLogKeys(controller.capturedKeys)
+        }
+
         let discovered = await discovery.discover()
         guard !Task.isCancelled else { return }
         apply(discovered)
@@ -117,7 +151,27 @@ final class ServicesStore {
         lastRefreshedAt = Date()
         scannerUnavailable = discovered.isEmpty
             && !FileManager.default.isExecutableFile(atPath: LsofPortScanner.executablePath)
+
+        // Order matters: restarts are matched to their new process before the
+        // tracker decides whether anything disappeared, so a relaunched service
+        // is never reported as having crashed.
+        controller?.reconcileRestarts(with: discovered)
+        lifecycle?.reconcile(with: discovered, diagnoses: currentDiagnoses(for: discovered))
+
         rebuildGroups()
+    }
+
+    /// Latest diagnosis per service, so a crash can be explained from whatever
+    /// the process last printed.
+    private func currentDiagnoses(for discovered: [LocalService]) -> [ServiceKey: LogDiagnosis] {
+        guard let logs, let lifecycle else { return [:] }
+        var result: [ServiceKey: LogDiagnosis] = [:]
+        for key in lifecycle.states.keys {
+            if let diagnosis = logs.existingStore(for: key)?.diagnosis {
+                result[key] = diagnosis
+            }
+        }
+        return result
     }
 
     private func rebuildGroups() {
