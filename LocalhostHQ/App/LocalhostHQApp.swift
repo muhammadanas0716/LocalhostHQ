@@ -73,37 +73,3 @@ private struct MenuBarLabel: View {
     }
 }
 
-extension ServiceKey: Codable {
-    private enum CodingKeys: String, CodingKey { case kind, path, port }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let kind = try container.decode(String.self, forKey: .kind)
-        let path = try container.decodeIfPresent(String.self, forKey: .path) ?? ""
-        port = try container.decode(Int.self, forKey: .port)
-        anchor = switch kind {
-        case "package": .package(path)
-        case "directory": .directory(path)
-        case "executable": .executable(path)
-        default: .port
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(port, forKey: .port)
-        switch anchor {
-        case .package(let path):
-            try container.encode("package", forKey: .kind)
-            try container.encode(path, forKey: .path)
-        case .directory(let path):
-            try container.encode("directory", forKey: .kind)
-            try container.encode(path, forKey: .path)
-        case .executable(let path):
-            try container.encode("executable", forKey: .kind)
-            try container.encode(path, forKey: .path)
-        case .port:
-            try container.encode("port", forKey: .kind)
-        }
-    }
-}

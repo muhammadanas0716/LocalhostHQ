@@ -143,7 +143,20 @@ enum SampleData {
             )
         }
 
-        return LocalService(
+        // Infrastructure is deliberately less controllable than a dev server,
+        // so previews exercise both shapes of the UI.
+        let isInfrastructure = framework.category == .database || framework.category == .cache
+        let descriptor = workingDirectory.map { directory in
+            LaunchDescriptor(
+                executableURL: URL(fileURLWithPath: executablePath ?? "/usr/bin/env"),
+                arguments: Array(arguments.dropFirst()),
+                workingDirectory: URL(fileURLWithPath: directory),
+                confidence: isInfrastructure ? .low : .high,
+                recoveredFrom: "pid \(pid)"
+            )
+        }
+
+        var service = LocalService(
             id: ServiceIdentifier(pid: pid, port: port),
             listeningPort: ListeningPort(
                 pid: pid,
@@ -176,6 +189,24 @@ enum SampleData {
             ),
             origin: .developer
         )
+
+        service.launchDescriptor = descriptor
+        service.controlRoot = ControlRoot(
+            pid: pid,
+            name: processName,
+            memberPIDs: [pid],
+            reason: "the process holding the listening socket"
+        )
+        service.capabilities = ServiceCapabilities(
+            canOpenInBrowser: framework.servesHTTP,
+            canRevealInFinder: workingDirectory != nil,
+            canStop: true,
+            canForceStop: true,
+            canRestart: descriptor?.isRestartable ?? false,
+            canStreamLogs: false,
+            restriction: nil
+        )
+        return service
     }
 }
 #endif
