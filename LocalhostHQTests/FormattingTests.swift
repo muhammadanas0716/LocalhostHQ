@@ -157,7 +157,18 @@ struct ServiceCapabilityTests {
 
     @Test("Display name falls back through the priority chain")
     func displayNameFallback() {
+        // Manifest name wins.
         #expect(SampleData.web.displayName == "web")      // from @dicee/web
-        #expect(SampleData.postgres.displayName == "postgres")  // no project: process name
+        // No project, but a recognised framework names it better than the
+        // executable would: "PostgreSQL", not "postgres".
+        #expect(SampleData.postgres.displayName == "PostgreSQL")
+        #expect(SampleData.jupyter.displayName == "Jupyter")
+    }
+
+    @Test("The framework is not repeated when it supplied the title")
+    func subtitleAvoidsRepeatingTitle() {
+        #expect(SampleData.postgres.subtitle.isEmpty)
+        // Where the project named the service, the framework still appears.
+        #expect(SampleData.web.subtitle == "Next.js · main")
     }
 }

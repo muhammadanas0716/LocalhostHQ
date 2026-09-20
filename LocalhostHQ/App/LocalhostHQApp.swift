@@ -14,10 +14,10 @@ struct LocalhostHQApp: App {
         Window(AppInfo.displayName, id: DashboardWindow.identifier) {
             DashboardView()
                 .environment(store)
-                .frame(minWidth: 620, minHeight: 380)
+                .frame(minWidth: 640, minHeight: 400)
                 .task { store.startMonitoring() }
         }
-        .defaultSize(width: 940, height: 600)
+        .defaultSize(width: 980, height: 640)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(after: .toolbar) {

@@ -258,7 +258,7 @@ struct FrameworkDetectorTests {
     // MARK: - Ranking behaviour
 
     @Test("A specific framework outranks the runtime baseline")
-    func rankingOrder() {
+    func rankingOrder() throws {
         let context = DetectionContext(
             processName: "node",
             arguments: ["next-server"],
@@ -267,10 +267,11 @@ struct FrameworkDetectorTests {
         )
         let ranking = detector.ranked(in: context)
 
-        #expect(ranking.first?.framework == .nextJS)
         #expect(ranking.contains { $0.framework == .node })
-        let next = try? #require(ranking.first)
-        #expect((next?.confidence ?? 0) > 0.9)
+
+        let strongest = try #require(ranking.first)
+        #expect(strongest.framework == .nextJS)
+        #expect(strongest.confidence > 0.9)
     }
 
     @Test("Confidence never reaches certainty")

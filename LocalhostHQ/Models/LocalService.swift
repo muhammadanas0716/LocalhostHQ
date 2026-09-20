@@ -41,18 +41,27 @@ struct LocalService: Identifiable, Sendable, Hashable {
     var category: ServiceCategory { framework?.category ?? .generic }
     var uptime: TimeInterval? { process.uptime }
 
-    /// The name shown in the UI, in the priority order the product specifies:
-    /// manifest name, then package directory, then repository directory, then
-    /// the process name.
+    /// The name shown in the UI: manifest name, then package directory, then
+    /// repository directory, then the recognised framework, then the process.
+    ///
+    /// A recognised framework outranks the executable because it is what the
+    /// developer actually calls the thing — "Jupyter" rather than
+    /// `python3.12`, "PostgreSQL" rather than `postgres`.
     var displayName: String {
         if let name = project?.displayName, !name.isEmpty { return name }
+        if let framework { return framework.displayName }
         return process.name
     }
 
     /// Subtitle line: `Next.js · main`.
+    ///
+    /// The framework is omitted when it already supplied the title, so an
+    /// infrastructure service does not read "PostgreSQL / PostgreSQL".
     var subtitle: String {
         var parts: [String] = []
-        if let framework { parts.append(framework.displayName) }
+        if let framework, framework.displayName != displayName {
+            parts.append(framework.displayName)
+        }
         if let branch = git?.branchName { parts.append(branch) }
         return parts.joined(separator: " · ")
     }

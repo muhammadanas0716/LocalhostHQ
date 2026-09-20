@@ -9,68 +9,75 @@ struct DebugInspectorView: View {
     let ranking: [FrameworkDetection]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider()
+        VStack(alignment: .leading, spacing: 12) {
+            Divider().overlay(Theme.border)
 
-            Text("Debug")
-                .font(.system(size: 9.5, weight: .semibold))
-                .textCase(.uppercase)
-                .kerning(0.4)
-                .foregroundStyle(.tertiary)
+            VStack(alignment: .leading, spacing: 8) {
+                SectionLabel(text: "Debug")
 
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(lines, id: \.0) { label, value in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text(label)
-                            .frame(width: 94, alignment: .leading)
-                            .foregroundStyle(.secondary)
-                        Text(value)
-                            .foregroundStyle(.primary)
-                            .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(lines, id: \.0) { label, value in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(label)
+                                .frame(width: 92, alignment: .leading)
+                                .foregroundStyle(Theme.textTertiary)
+                            Text(value)
+                                .foregroundStyle(Theme.textSecondary)
+                                .textSelection(.enabled)
+                        }
+                        .font(.system(size: 10, design: .monospaced))
                     }
-                    .font(.system(size: 10.5, design: .monospaced))
                 }
             }
 
             if !ranking.isEmpty {
-                Text("Framework ranking")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .textCase(.uppercase)
-                    .kerning(0.4)
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionLabel(text: "Framework ranking")
 
-                ForEach(ranking, id: \.framework.id) { detection in
-                    HStack(spacing: 6) {
-                        Text(detection.framework.displayName)
-                            .frame(width: 94, alignment: .leading)
-                            .foregroundStyle(.secondary)
-                        Text(String(format: "%.2f", detection.confidence))
-                            .foregroundStyle(.primary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(ranking, id: \.framework.id) { detection in
+                            HStack(spacing: 8) {
+                                Text(detection.framework.displayName)
+                                    .frame(width: 92, alignment: .leading)
+                                    .foregroundStyle(Theme.textSecondary)
+
+                                // Bar makes the margin between candidates
+                                // visible at a glance.
+                                GeometryReader { proxy in
+                                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                        .fill(Theme.accent.opacity(0.35))
+                                        .frame(width: proxy.size.width * detection.confidence, height: 4)
+                                        .frame(maxHeight: .infinity, alignment: .center)
+                                }
+                                .frame(height: 10)
+
+                                Text(String(format: "%.2f", detection.confidence))
+                                    .foregroundStyle(Theme.textPrimary)
+                            }
+                            .font(.system(size: 10, design: .monospaced))
+                        }
                     }
-                    .font(.system(size: 10.5, design: .monospaced))
                 }
             }
         }
     }
 
     private var lines: [(String, String)] {
-        var rows: [(String, String)] = [
+        [
             ("PID", String(service.pid)),
+            ("Parent PID", service.process.parentPID.map(String.init) ?? "—"),
             ("Port", String(service.port)),
             ("Process", service.process.name),
             ("Origin", service.origin.rawValue),
             ("Bindings", service.listeningPort.bindingDescription),
             ("Family", service.listeningPort.familyDescription),
+            ("Executable", service.process.executablePath ?? "—"),
+            ("CWD", service.process.workingDirectory ?? "— (denied)"),
+            ("Package root", service.project?.packageRoot ?? "—"),
+            ("Repo root", service.project?.repositoryRoot ?? "—"),
+            ("Manifest", service.project?.manifest?.kind.rawValue ?? "—"),
+            ("Git branch", service.git?.branchName ?? "—"),
         ]
-        rows.append(("Executable", service.process.executablePath ?? "—"))
-        rows.append(("CWD", service.process.workingDirectory ?? "— (denied)"))
-        rows.append(("Package root", service.project?.packageRoot ?? "—"))
-        rows.append(("Repo root", service.project?.repositoryRoot ?? "—"))
-        rows.append(("Manifest", service.project?.manifest?.kind.rawValue ?? "—"))
-        rows.append(("Git branch", service.git?.branchName ?? "—"))
-        rows.append(("Parent PID", service.process.parentPID.map(String.init) ?? "—"))
-        return rows
     }
 }
 
@@ -83,5 +90,7 @@ struct DebugInspectorView: View {
         ]
     )
     .padding(16)
-    .frame(width: 320)
+    .frame(width: 340)
+    .background(Theme.canvas)
+    .preferredColorScheme(.dark)
 }

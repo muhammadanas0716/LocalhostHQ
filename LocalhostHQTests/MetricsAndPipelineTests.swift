@@ -135,7 +135,7 @@ struct DiscoveryPipelineTests {
     }
 
     @Test("A Next.js dev server is resolved end to end")
-    func fullPipeline() async {
+    func fullPipeline() async throws {
         let port = ListeningPort(
             pid: 4812, processName: "node", port: 3000,
             bindings: [SocketBinding(address: "*", family: .ipv6)]
@@ -159,16 +159,16 @@ struct DiscoveryPipelineTests {
         let services = await discovery.discover()
         #expect(services.count == 1)
 
-        let service = try? #require(services.first)
-        #expect(service?.port == 3000)
-        #expect(service?.pid == 4812)
-        #expect(service?.framework == .nextJS)
-        #expect(service?.displayName == "web")
-        #expect(service?.project?.packageRoot == "/Users/dev/Code/dicee/apps/web")
-        #expect(service?.project?.repositoryRoot == "/Users/dev/Code/dicee")
-        #expect(service?.git?.branchName == "main")
-        #expect(service?.origin == .developer)
-        #expect(service?.browserURL?.absoluteString == "http://localhost:3000/")
+        let service = try #require(services.first)
+        #expect(service.port == 3000)
+        #expect(service.pid == 4812)
+        #expect(service.framework == .nextJS)
+        #expect(service.displayName == "web")
+        #expect(service.project?.packageRoot == "/Users/dev/Code/dicee/apps/web")
+        #expect(service.project?.repositoryRoot == "/Users/dev/Code/dicee")
+        #expect(service.git?.branchName == "main")
+        #expect(service.origin == .developer)
+        #expect(service.browserURL?.absoluteString == "http://localhost:3000/")
     }
 
     /// The scan-then-inspect race happens constantly and must simply drop the
@@ -225,7 +225,7 @@ struct DiscoveryPipelineTests {
     }
 
     @Test("A restricted process still yields a usable service")
-    func restrictedProcessDegradesGracefully() async {
+    func restrictedProcessDegradesGracefully() async throws {
         let port = ListeningPort(
             pid: 992, processName: "postgres", port: 5432,
             bindings: [SocketBinding(address: "127.0.0.1", family: .ipv4)]
@@ -243,11 +243,13 @@ struct DiscoveryPipelineTests {
             fileSystem: FakeFileSystem()
         )
 
-        let service = try? #require(await discovery.discover().first)
-        #expect(service?.framework == .postgres)
-        #expect(service?.supportsBrowserOpen == false)
-        #expect(service?.project == nil)
-        #expect(service?.uptime != nil)
+        let service = try #require(await discovery.discover().first)
+        #expect(service.framework == .postgres)
+        #expect(service.supportsBrowserOpen == false)
+        #expect(service.project == nil)
+        #expect(service.uptime != nil)
+        // The framework names it, since no project could be resolved.
+        #expect(service.displayName == "PostgreSQL")
     }
 
     @Test("Identity stays stable across refreshes")

@@ -2,64 +2,87 @@ import SwiftUI
 
 /// One service line.
 ///
-/// Two lines, not four: the identity and port on top, everything else on a
-/// single secondary line. Metrics sit on the trailing edge so the eye can scan
-/// a column of ports down one side and a column of costs down the other.
+/// Two lines, not four: identity and port on top, context below. Metrics sit on
+/// the trailing edge so the eye can scan a column of ports down one side and a
+/// column of costs down the other.
 struct ServiceRow: View {
     let service: LocalService
     var isSelected: Bool = false
+    var onSelect: () -> Void = {}
+
+    @State private var isHovering = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            StatusIndicator(category: service.category)
+        Button(action: onSelect) {
+            HStack(spacing: 11) {
+                ServiceGlyph(
+                    category: service.category,
+                    symbolName: service.framework?.symbolName ?? "circle.dotted"
+                )
 
-            Image(systemName: service.framework?.symbolName ?? "circle.dotted")
-                .font(.system(size: 13))
-                .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.tint))
-                .frame(width: 18)
-                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2.5) {
+                    Text(service.displayName)
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(service.displayName)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Text(secondaryLine)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            Spacer(minLength: 12)
-
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(":\(String(service.port))")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.tint))
-
-                if let metrics = metricsLine {
-                    Text(metrics)
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                    Text(secondaryLine)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
+
+                Spacer(minLength: 12)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    PortBadge(port: service.port, isProminent: isSelected || isHovering)
+
+                    if let metrics = metricsLine {
+                        Text(metrics)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
+                .fixedSize(horizontal: true, vertical: false)
             }
-            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.rowCornerRadius, style: .continuous)
+                    .fill(backgroundFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.rowCornerRadius, style: .continuous)
+                    .strokeBorder(isSelected ? Theme.accent.opacity(0.45) : Color.clear, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private var backgroundFill: Color {
+        if isSelected { return Theme.surfaceSelected }
+        return isHovering ? Theme.surfaceHover : Theme.surface
     }
 
     /// `Next.js · main · ~/Code/dicee/apps/web`
     private var secondaryLine: String {
         var parts: [String] = []
-        if let framework = service.framework { parts.append(framework.displayName) }
+        // Skip the framework when it already supplied the title.
+        if let framework = service.framework, framework.displayName != service.displayName {
+            parts.append(framework.displayName)
+        }
         if let branch = service.git?.branchName { parts.append(branch) }
         if let directory = service.actionableDirectory { parts.append(Format.path(directory)) }
+        // Falling back to the executable still tells the developer something.
         if parts.isEmpty { parts.append(service.process.name) }
         return parts.joined(separator: " · ")
     }
@@ -79,13 +102,15 @@ struct ServiceRow: View {
 }
 
 #Preview("Rows") {
-    VStack(spacing: 0) {
+    VStack(spacing: 4) {
         ServiceRow(service: SampleData.web)
         ServiceRow(service: SampleData.api, isSelected: true)
-            .background(.selection, in: RoundedRectangle(cornerRadius: 6))
         ServiceRow(service: SampleData.postgres)
         ServiceRow(service: SampleData.jupyter)
+        ServiceRow(service: SampleData.redis)
     }
-    .padding(12)
-    .frame(width: 560)
+    .padding(14)
+    .frame(width: 600)
+    .background(Theme.canvas)
+    .preferredColorScheme(.dark)
 }

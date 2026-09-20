@@ -12,78 +12,103 @@ struct EmptyStateView: View {
     let reason: Reason
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             icon
 
-            VStack(spacing: 6) {
+            VStack(spacing: 7) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+
                 Text(message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
+                    .lineSpacing(2)
+                    .frame(maxWidth: 340)
             }
 
             if case .noServices = reason {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(["npm run dev", "python app.py", "cargo run"], id: \.self) { command in
-                        Text(command)
-                            .font(.system(size: 11.5, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(Self.examples, id: \.command) { example in
+                        HStack(spacing: 9) {
+                            Text(example.command)
+                                .font(.system(size: 11.5, design: .monospaced))
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
+                                .frame(width: 204, alignment: .leading)
+
+                            Text(example.label)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.textTertiary)
+                                .lineLimit(1)
+                        }
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 13)
+                .themedCard()
+                .padding(.top, 4)
             }
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas)
     }
+
+    private static let examples: [(command: String, label: String)] = [
+        ("npm run dev", "Next.js, Vite, anything Node"),
+        ("uvicorn main:app --reload", "FastAPI"),
+        ("python manage.py runserver", "Django"),
+        ("cargo run", "Rust"),
+    ]
 
     @ViewBuilder
     private var icon: some View {
         switch reason {
         case .noServices:
-            HubMark(tint: .secondary, secondaryOpacity: 0.5)
-                .frame(width: 44, height: 44)
-                .opacity(0.65)
+            HubMark(tint: Theme.accent, secondaryOpacity: 0.5)
+                .frame(width: 46, height: 46)
+                .opacity(0.8)
         case .noMatches:
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(Theme.textTertiary)
         case .scannerUnavailable:
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(.orange)
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 26))
+                .foregroundStyle(Theme.warning)
         }
     }
 
     private var title: String {
         switch reason {
-        case .noServices: "No local services found."
-        case .noMatches: "No matching services"
-        case .scannerUnavailable: "Cannot scan ports"
+        case .noServices: "Nothing running yet"
+        case .noMatches: "No matches"
+        case .scannerUnavailable: "Can't scan ports"
         }
     }
 
     private var message: String {
         switch reason {
         case .noServices:
-            "Start a development server and it will automatically appear here."
+            "Start a development server and it'll show up here on its own — no setup needed."
         case .noMatches(let query):
-            "Nothing matches “\(query)”. Search by project, framework, port or path."
+            "Nothing matches “\(query)”. Try a project name, framework, port or path."
         case .scannerUnavailable:
-            "/usr/sbin/lsof is missing or not executable, so listening ports cannot be enumerated."
+            "/usr/sbin/lsof is missing or isn't executable, so listening ports can't be enumerated."
         }
     }
 }
 
 #Preview("Empty") {
-    EmptyStateView(reason: .noServices).frame(width: 560, height: 420)
+    EmptyStateView(reason: .noServices)
+        .frame(width: 640, height: 480)
+        .preferredColorScheme(.dark)
 }
 
 #Preview("No matches") {
-    EmptyStateView(reason: .noMatches(query: "rails")).frame(width: 560, height: 420)
+    EmptyStateView(reason: .noMatches(query: "rails"))
+        .frame(width: 640, height: 480)
+        .preferredColorScheme(.dark)
 }

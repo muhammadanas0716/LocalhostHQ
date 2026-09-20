@@ -8,56 +8,71 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider()
+            Divider().overlay(Theme.border)
 
             if store.groups.isEmpty {
-                Text("No local services running")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 22)
+                emptyState
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 12) {
                         ForEach(store.groups) { group in
                             groupView(group)
                         }
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 9)
                 }
-                .frame(maxHeight: 340)
+                .frame(maxHeight: 360)
                 .scrollBounceBehavior(.basedOnSize)
             }
 
-            Divider()
+            Divider().overlay(Theme.border)
             footer
         }
-        .frame(width: 300)
+        .frame(width: 308)
+        .background(Theme.chrome)
+        .preferredColorScheme(.dark)
     }
 
     // MARK: - Sections
 
     private var header: some View {
         HStack(spacing: 8) {
-            HubMarkBadge(size: 18)
+            HubMarkBadge(size: 19)
             Text(AppInfo.displayName)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+
             Spacer()
-            Text("\(store.visibleServices.count)")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
+
+            Text(countLabel)
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.textTertiary)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.vertical, 10)
+    }
+
+    private var countLabel: String {
+        let count = store.visibleServices.count
+        return count == 1 ? "1 running" : "\(count) running"
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 5) {
+            Text("Nothing running")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+            Text("Start a dev server to see it here")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.textTertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 26)
     }
 
     private func groupView(_ group: ServiceGroup) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(group.title)
-                .font(.system(size: 9.5, weight: .semibold))
-                .textCase(.uppercase)
-                .kerning(0.4)
-                .foregroundStyle(.tertiary)
+        VStack(alignment: .leading, spacing: 4) {
+            SectionLabel(text: group.title)
                 .padding(.horizontal, 12)
 
             ForEach(group.services) { service in
@@ -67,7 +82,7 @@ struct MenuBarView: View {
     }
 
     private var footer: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 1) {
             MenuBarActionButton(title: "Open Dashboard", symbol: "square.grid.2x2") {
                 openDashboard()
             }
@@ -75,7 +90,7 @@ struct MenuBarView: View {
                 NSApplication.shared.terminate(nil)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
     }
 
     // MARK: - Actions
@@ -102,38 +117,41 @@ private struct MenuBarServiceRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                StatusIndicator(category: service.category, diameter: 6)
+            HStack(spacing: 9) {
+                ServiceGlyph(
+                    category: service.category,
+                    symbolName: service.framework?.symbolName ?? "circle.dotted",
+                    size: 22,
+                    showsStatusDot: false
+                )
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(service.displayName)
                         .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                     if !service.subtitle.isEmpty {
                         Text(service.subtitle)
                             .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
                     }
                 }
 
                 Spacer(minLength: 8)
 
-                Text(":\(String(service.port))")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                PortBadge(port: service.port, isProminent: isHovering)
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(isHovering ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isHovering ? Theme.surfaceHover : Color.clear)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 7)
         .onHover { isHovering = $0 }
         .help(service.supportsBrowserOpen ? "Open in browser" : "Show in dashboard")
     }
@@ -147,7 +165,7 @@ private struct MenuBarActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.system(size: 11))
                     .frame(width: 14)
@@ -155,16 +173,17 @@ private struct MenuBarActionButton: View {
                     .font(.system(size: 12))
                 Spacer()
             }
+            .foregroundStyle(isHovering ? Theme.textPrimary : Theme.textSecondary)
             .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(isHovering ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isHovering ? Theme.surfaceHover : Color.clear)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 7)
         .onHover { isHovering = $0 }
     }
 }

@@ -8,7 +8,7 @@ struct ServiceDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 20) {
                 header
                 actions
                 metrics
@@ -20,98 +20,142 @@ struct ServiceDetailView: View {
             .padding(16)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .background(Theme.canvas)
     }
 
     // MARK: - Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: service.framework?.symbolName ?? "circle.dotted")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.tint)
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 10) {
+                ServiceGlyph(
+                    category: service.category,
+                    symbolName: service.framework?.symbolName ?? "circle.dotted",
+                    size: 34,
+                    showsStatusDot: false
+                )
 
-                Text(service.displayName)
-                    .font(.system(size: 16, weight: .semibold))
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(service.displayName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(2)
+
+                    Text(service.category.friendlyLabel)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textTertiary)
+                }
             }
 
             HStack(spacing: 6) {
-                StatusIndicator(category: service.category, diameter: 6)
+                Circle()
+                    .fill(Theme.running)
+                    .frame(width: 6, height: 6)
                 Text("Running")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.running)
 
                 if service.process.isRestricted {
                     Text("· limited access")
                         .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.textTertiary)
                         .help("macOS denied inspection of this process, so some fields are unavailable.")
                 }
             }
 
-            if let url = service.browserURL {
-                Link(destination: url) {
+            addressLine
+        }
+    }
+
+    @ViewBuilder
+    private var addressLine: some View {
+        if let url = service.browserURL {
+            Link(destination: url) {
+                HStack(spacing: 5) {
                     Text(LocalhostURL.displayString(port: service.port, preferringTLS: url.scheme == "https") ?? url.absoluteString)
                         .font(.system(size: 12, design: .monospaced))
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .bold))
                 }
-                .buttonStyle(.link)
-            } else {
-                Text("\(service.listeningPort.displayHost):\(String(service.port))")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+                .foregroundStyle(Theme.accent)
             }
+            .buttonStyle(.plain)
+        } else {
+            Text("\(service.listeningPort.displayHost):\(String(service.port))")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Theme.textSecondary)
+                .textSelection(.enabled)
         }
     }
 
     // MARK: - Actions
 
     private var actions: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             if service.supportsBrowserOpen {
-                Button {
+                actionButton("Open", symbol: "safari", isProminent: true) {
                     ServiceActions.openInBrowser(service)
-                } label: {
-                    Label("Open", systemImage: "safari")
                 }
             }
             if service.actionableDirectory != nil {
-                Button {
+                actionButton("Finder", symbol: "folder") {
                     ServiceActions.revealInFinder(service)
-                } label: {
-                    Label("Finder", systemImage: "folder")
                 }
-                Button {
+                actionButton("Terminal", symbol: "terminal") {
                     ServiceActions.openInTerminal(service)
-                } label: {
-                    Label("Terminal", systemImage: "terminal")
                 }
             }
             Spacer(minLength: 0)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+    }
+
+    private func actionButton(
+        _ title: String,
+        symbol: String,
+        isProminent: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 10.5, weight: .medium))
+                Text(title).font(.system(size: 11.5, weight: .medium))
+            }
+            .foregroundStyle(isProminent ? Theme.accent : Theme.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isProminent ? Theme.accentMuted : Theme.surface)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(isProminent ? Theme.accent.opacity(0.3) : Theme.border, lineWidth: 0.5)
+                    }
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Metrics
 
     private var metrics: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             MetricView(
                 label: "CPU",
                 value: service.metrics?.cpuPercent.map(Format.cpuPrecise) ?? "—",
-                symbol: "cpu"
+                symbol: "cpu",
+                tint: Theme.textPrimary
             )
             MetricView(
                 label: "Memory",
                 value: service.metrics.map { Format.memory($0.residentMemoryBytes) } ?? "—",
-                symbol: "memorychip"
+                symbol: "memorychip",
+                tint: Theme.textPrimary
             )
             MetricView(
                 label: "Uptime",
                 value: service.uptime.map(Format.uptime) ?? "—",
-                symbol: "clock"
+                symbol: "clock",
+                tint: Theme.textPrimary
             )
         }
     }
@@ -120,57 +164,66 @@ struct ServiceDetailView: View {
 
     @ViewBuilder
     private var details: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let framework = service.framework {
-                DetailRow(
-                    label: "Framework",
-                    value: [framework.displayName, framework.runtime?.displayName]
-                        .compactMap { $0 }
-                        .joined(separator: " · ")
-                )
+        VStack(alignment: .leading, spacing: 20) {
+            DetailGroup(title: "Service") {
+                if let framework = service.framework {
+                    DetailRow(label: "Framework", value: framework.displayName)
+                    if let runtime = framework.runtime {
+                        DetailRow(label: "Runtime", value: runtime.displayName)
+                    }
+                }
+                DetailRow(label: "Port", value: String(service.port), monospaced: true)
+                DetailRow(label: "Listening on", value: service.listeningPort.bindingDescription, monospaced: true)
             }
-
-            DetailRow(label: "PID", value: String(service.pid), monospaced: true)
 
             if let project = service.project {
-                if let packageRoot = project.packageRoot {
-                    DetailRow(label: "Project", value: Format.path(packageRoot), monospaced: true)
-                }
-                if let repositoryRoot = project.repositoryRoot, repositoryRoot != project.packageRoot {
-                    DetailRow(label: "Repository", value: Format.path(repositoryRoot), monospaced: true)
-                }
-                if project.workingDirectory != project.packageRoot {
-                    DetailRow(label: "Working Directory", value: Format.path(project.workingDirectory), monospaced: true)
-                }
-                if let declaredName = project.manifest?.declaredName {
-                    DetailRow(label: "Package", value: declaredName, monospaced: true)
+                DetailGroup(title: "Project") {
+                    if let packageRoot = project.packageRoot {
+                        DetailRow(label: "Package", value: Format.path(packageRoot), monospaced: true)
+                    }
+                    if let repositoryRoot = project.repositoryRoot, repositoryRoot != project.packageRoot {
+                        DetailRow(label: "Repository", value: Format.path(repositoryRoot), monospaced: true)
+                    }
+                    if project.workingDirectory != project.packageRoot {
+                        DetailRow(label: "Working dir", value: Format.path(project.workingDirectory), monospaced: true)
+                    }
+                    if let declaredName = project.manifest?.declaredName {
+                        DetailRow(label: "Manifest name", value: declaredName, monospaced: true)
+                    }
+                    if let git = service.git {
+                        DetailRow(label: "Git branch", value: git.branchName, monospaced: true)
+                    }
                 }
             } else if let cwd = service.process.workingDirectory {
-                DetailRow(label: "Working Directory", value: Format.path(cwd), monospaced: true)
+                DetailGroup(title: "Project") {
+                    DetailRow(label: "Working dir", value: Format.path(cwd), monospaced: true)
+                }
             }
 
-            if let git = service.git {
-                DetailRow(label: "Git", value: git.branchName, monospaced: true)
-            }
-
-            DetailRow(label: "Listening On", value: service.listeningPort.bindingDescription, monospaced: true)
-
-            if let executable = service.process.executablePath {
-                DetailRow(label: "Executable", value: executable, monospaced: true)
-            }
-            if let command = service.process.commandLine {
-                DetailRow(label: "Command", value: command, monospaced: true)
+            DetailGroup(title: "Process") {
+                DetailRow(label: "PID", value: String(service.pid), monospaced: true)
+                if let parent = service.process.parentPID {
+                    DetailRow(label: "Parent PID", value: String(parent), monospaced: true)
+                }
+                if let executable = service.process.executablePath {
+                    DetailRow(label: "Executable", value: executable, monospaced: true)
+                }
+                if let command = service.process.commandLine {
+                    DetailRow(label: "Command", value: command, monospaced: true)
+                }
             }
         }
     }
 }
 
-#Preview("Detail") {
+#Preview("Web service") {
     ServiceDetailView(service: SampleData.web)
-        .frame(width: 320, height: 620)
+        .frame(width: 340, height: 680)
+        .preferredColorScheme(.dark)
 }
 
 #Preview("Infrastructure") {
     ServiceDetailView(service: SampleData.postgres)
-        .frame(width: 320, height: 620)
+        .frame(width: 340, height: 680)
+        .preferredColorScheme(.dark)
 }

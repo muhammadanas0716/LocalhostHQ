@@ -6,35 +6,33 @@ struct ProjectSection: View {
     @Binding var selection: ServiceIdentifier?
 
     var body: some View {
-        Section {
-            ForEach(group.services) { service in
-                ServiceRow(service: service, isSelected: selection == service.id)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
-                    .listRowSeparator(.hidden)
-                    .tag(service.id)
-                    .contextMenu { ServiceContextMenu(service: service) }
-            }
-        } header: {
+        VStack(alignment: .leading, spacing: 5) {
             header
+            VStack(spacing: 4) {
+                ForEach(group.services) { service in
+                    ServiceRow(
+                        service: service,
+                        isSelected: selection == service.id,
+                        onSelect: { selection = service.id }
+                    )
+                    .contextMenu { ServiceContextMenu(service: service) }
+                }
+            }
         }
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             Image(systemName: group.kind.symbolName)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.textTertiary)
 
-            Text(group.title)
-                .font(.system(size: 11, weight: .semibold))
-                .textCase(.uppercase)
-                .kerning(0.5)
-                .foregroundStyle(.secondary)
+            SectionLabel(text: group.title)
 
             if let directory = group.directory {
                 Text(Format.path(directory))
-                    .font(.system(size: 10.5, design: .monospaced))
-                    .foregroundStyle(.quaternary)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Theme.textTertiary.opacity(0.7))
                     .lineLimit(1)
                     .truncationMode(.head)
             }
@@ -42,27 +40,26 @@ struct ProjectSection: View {
             Spacer(minLength: 8)
 
             Text("\(group.services.count)")
-                .font(.system(size: 10.5, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(Theme.textTertiary)
                 .monospacedDigit()
         }
         .padding(.horizontal, 4)
-        .padding(.top, 6)
     }
 }
 
 extension ServiceGroupKind {
     var symbolName: String {
         switch self {
-        case .repository: "folder"
-        case .development: "hammer"
+        case .repository: "folder.fill"
+        case .development: "hammer.fill"
         case .infrastructure: "server.rack"
-        case .system: "gearshape"
+        case .system: "gearshape.fill"
         }
     }
 }
 
-/// Shared between the row context menu and the detail view's toolbar.
+/// Shared between the row context menu and the detail view.
 struct ServiceContextMenu: View {
     let service: LocalService
 
@@ -84,17 +81,18 @@ struct ServiceContextMenu: View {
 
 #Preview {
     @Previewable @State var selection: ServiceIdentifier?
-    return List(selection: $selection) {
-        ProjectSection(
-            group: ServiceGroup(
-                id: "/Users/anas/Code/dicee",
-                title: "dicee",
-                kind: .repository,
-                directory: "/Users/anas/Code/dicee",
-                services: [SampleData.web, SampleData.api]
-            ),
-            selection: $selection
-        )
-    }
-    .frame(width: 560, height: 260)
+    return ProjectSection(
+        group: ServiceGroup(
+            id: "/Users/anas/Code/dicee",
+            title: "dicee",
+            kind: .repository,
+            directory: "/Users/anas/Code/dicee",
+            services: [SampleData.web, SampleData.api]
+        ),
+        selection: $selection
+    )
+    .padding(14)
+    .frame(width: 600)
+    .background(Theme.canvas)
+    .preferredColorScheme(.dark)
 }
