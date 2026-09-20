@@ -81,13 +81,25 @@ actor ProcessLauncher {
         process.standardOutput = outPipe
         process.standardError = errPipe
 
-        attach(outPipe, stream: .stdout, onOutput: onOutput)
-        attach(errPipe, stream: .stderr, onOutput: onOutput)
+        let outAssembler = LineAssembler()
+        let errAssembler = LineAssembler()
+        attach(outPipe, assembler: outAssembler, stream: .stdout, onOutput: onOutput)
+        attach(errPipe, assembler: errAssembler, stream: .stderr, onOutput: onOutput)
 
         process.terminationHandler = { finished in
-            // Detach handlers so the pipes can close and the object deallocate.
-            outPipe.fileHandleForReading.readabilityHandler = nil
-            errPipe.fileHandleForReading.readabilityHandler = nil
+            // Drain whatever is still buffered before detaching. A process that
+            // dies mid-burst leaves output in the pipe, and the last lines
+            // before a crash are the ones worth reading.
+            for (pipe, assembler, stream) in [
+                (outPipe, outAssembler, LogStream.stdout),
+                (errPipe, errAssembler, LogStream.stderr),
+            ] {
+                pipe.fileHandleForReading.readabilityHandler = nil
+                let remaining = pipe.fileHandleForReading.readDataToEndOfFile()
+                var lines = remaining.isEmpty ? [] : assembler.consume(remaining)
+                lines.append(contentsOf: assembler.flush())
+                if !lines.isEmpty { onOutput(lines, stream) }
+            }
             onExit(finished.terminationStatus)
         }
 
@@ -122,19 +134,18 @@ actor ProcessLauncher {
 
     // MARK: - Pipe plumbing
 
+    /// Pipe reads land on an arbitrary queue and can split mid-line, so the
+    /// assembler carries the tail forward until its newline arrives.
     private func attach(
         _ pipe: Pipe,
+        assembler: LineAssembler,
         stream: LogStream,
         onOutput: @escaping @Sendable ([String], LogStream) -> Void
     ) {
-        // Pipe reads land on an arbitrary queue and can split mid-line, so the
-        // tail is carried forward until its newline arrives.
-        let assembler = LineAssembler()
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty else {
-                let tail = assembler.flush()
-                if !tail.isEmpty { onOutput(tail, stream) }
+                // EOF. The termination handler performs the final drain.
                 handle.readabilityHandler = nil
                 return
             }

@@ -83,6 +83,12 @@ actor ProcessController {
                 ? ProcessControlError.alreadyGone
                 : ProcessControlError.identityChanged
         }
+        // Distinguish "not ours to signal" from "we could not work out the
+        // tree": both refuse the operation, but only one is worth explaining
+        // as a permissions problem.
+        if kill(identity.pid, 0) != 0, errno == EPERM {
+            throw ProcessControlError.notPermitted
+        }
         guard let root = treeInspector.controlRoot(for: identity.pid, in: table.snapshot()) else {
             throw ProcessControlError.noSafeControlRoot
         }
