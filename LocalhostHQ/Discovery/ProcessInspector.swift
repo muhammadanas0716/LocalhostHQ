@@ -60,12 +60,16 @@ struct ProcessInspector: ProcessInspecting {
 
     // MARK: - libproc / sysctl
 
+    /// `<sys/proc_info.h>` defines `PROC_PIDPATHINFO_MAXSIZE` as `4 * MAXPATHLEN`,
+    /// but the macro is not bridged into Swift.
+    private static let executablePathMaxSize = 4 * Int(MAXPATHLEN)
+
     /// `proc_pidpath` — absolute path of the running executable.
     private static func executablePath(pid: Int32) -> String? {
-        var buffer = [CChar](repeating: 0, count: Int(PROC_PIDPATHINFO_MAXSIZE))
+        var buffer = [CChar](repeating: 0, count: executablePathMaxSize)
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
         guard length > 0 else { return nil }
-        let path = String(cString: buffer)
+        let path = Self.string(fromNullTerminated: buffer)
         return path.isEmpty ? nil : path
     }
 
@@ -84,6 +88,14 @@ struct ProcessInspector: ProcessInspecting {
             return String(cString: base.assumingMemoryBound(to: CChar.self))
         }
         return path.isEmpty ? nil : path
+    }
+
+    /// Decodes a NUL-terminated C buffer, tolerating invalid UTF-8 rather than
+    /// discarding the whole value — process names are not guaranteed to be
+    /// well-formed.
+    private static func string(fromNullTerminated buffer: [CChar]) -> String {
+        let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     private struct KernelInfo {
