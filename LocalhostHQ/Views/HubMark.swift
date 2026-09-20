@@ -4,10 +4,10 @@ import SwiftUI
 /// Proportions of the Localhost HQ mark, as fractions of the mark's radius.
 /// These mirror `Tools/GenerateAppIcon.swift`; changing one means changing both.
 enum HubMarkGeometry {
-    static let hubRadius: CGFloat = 0.200
-    static let satelliteRadius: CGFloat = 0.115
-    static let orbit: CGFloat = 0.600
-    static let connectorWidth: CGFloat = 0.075
+    static let hubRadius: CGFloat = 0.235
+    static let satelliteRadius: CGFloat = 0.150
+    static let orbit: CGFloat = 0.625
+    static let connectorWidth: CGFloat = 0.098
     static let angles: [CGFloat] = [90, 210, 330]
 
     /// Satellite centres for a mark of the given radius around `center`.
@@ -92,7 +92,7 @@ struct HubMarkBadge: View {
             )
             .overlay {
                 HubMark(tint: .white)
-                    .frame(width: size * 0.72, height: size * 0.72)
+                    .frame(width: size * 0.88, height: size * 0.88)
             }
             .frame(width: size, height: size)
     }

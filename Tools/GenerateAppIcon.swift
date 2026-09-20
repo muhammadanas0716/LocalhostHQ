@@ -41,10 +41,10 @@ private func squirclePath(center: CGPoint, radius a: CGFloat) -> CGPath {
 /// Proportions of the hub mark, expressed as fractions of the body radius.
 /// `Views/HubMarkShape.swift` mirrors these so the in-app mark matches the icon.
 enum HubMark {
-    static let hubRadius: CGFloat = 0.200
-    static let satelliteRadius: CGFloat = 0.115
-    static let orbit: CGFloat = 0.600
-    static let connectorWidth: CGFloat = 0.075
+    static let hubRadius: CGFloat = 0.235
+    static let satelliteRadius: CGFloat = 0.150
+    static let orbit: CGFloat = 0.625
+    static let connectorWidth: CGFloat = 0.098
     static let angles: [CGFloat] = [90, 210, 330]
 }
 

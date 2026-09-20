@@ -43,7 +43,7 @@ struct FakeFileSystem: FileSystemProbing {
     func childNames(atPath path: String) -> Set<String> {
         let prefix = ProjectDetector.normalize(path) + "/"
         var names: Set<String> = []
-        for candidate in files.keys.map(String.init) + directories.map(String.init) {
+        for candidate in Array(files.keys) + Array(directories) {
             guard candidate.hasPrefix(prefix) else { continue }
             let remainder = candidate.dropFirst(prefix.count)
             guard !remainder.isEmpty else { continue }
