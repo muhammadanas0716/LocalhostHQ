@@ -63,10 +63,6 @@ struct DashboardView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            HubMarkBadge(size: 20)
-        }
-
         ToolbarItemGroup(placement: .primaryAction) {
             Toggle(isOn: Binding(
                 get: { store.showsSystemServices },

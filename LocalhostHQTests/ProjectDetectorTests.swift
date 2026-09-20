@@ -56,6 +56,7 @@ struct ProjectDetectorTests {
         var fs = FakeFileSystem()
         fs.addDirectory("/Users/dev/Code/api/.git")
         fs.addFile("/Users/dev/Code/api/pyproject.toml", contents: "[project]\nname = \"api\"")
+        fs.addDirectory("/Users/dev/Code/api/src/handlers")
 
         let detector = ProjectDetector(fileSystem: fs, homeDirectory: "/Users/dev")
         let context = detector.detect(workingDirectory: "/Users/dev/Code/api/src/handlers")

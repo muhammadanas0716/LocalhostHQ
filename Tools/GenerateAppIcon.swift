@@ -66,23 +66,17 @@ private func drawIcon(in context: CGContext, size: CGFloat) {
     context.scaleBy(x: scale, y: scale)
 
     let canvas: CGFloat = 1024
-    let bodyRadius = canvas * canvasRatioBody / 2
     let center = CGPoint(x: canvas / 2, y: canvas / 2)
-    let body = squirclePath(center: center, radius: bodyRadius)
 
-    // Ambient shadow beneath the body, as macOS icons carry.
-    context.saveGState()
-    context.setShadow(
-        offset: CGSize(width: 0, height: -canvas * 0.012),
-        blur: canvas * 0.035,
-        color: rgb(0, 0, 0, 0.30)
-    )
-    context.addPath(body)
-    context.setFillColor(indigoMid)
-    context.fillPath()
-    context.restoreGState()
+    // Full-bleed artwork: the gradient fills the entire canvas and macOS applies
+    // its own icon shape and shadow. Baking in a squircle plus a transparent
+    // margin makes modern macOS nest that squircle inside the system container,
+    // which renders as a small tile on a dark square.
+    let body = CGPath(rect: CGRect(x: 0, y: 0, width: canvas, height: canvas), transform: nil)
+    // The mark is sized against this radius, not the canvas, so the glyph keeps
+    // its proportions now that the surrounding margin is gone.
+    let bodyRadius = canvas * canvasRatioBody / 2
 
-    // Body gradient.
     context.saveGState()
     context.addPath(body)
     context.clip()
@@ -94,8 +88,8 @@ private func drawIcon(in context: CGContext, size: CGFloat) {
     ) {
         context.drawLinearGradient(
             gradient,
-            start: CGPoint(x: center.x, y: center.y + bodyRadius),
-            end: CGPoint(x: center.x, y: center.y - bodyRadius),
+            start: CGPoint(x: center.x, y: canvas),
+            end: CGPoint(x: center.x, y: 0),
             options: []
         )
     }
@@ -115,14 +109,6 @@ private func drawIcon(in context: CGContext, size: CGFloat) {
             options: []
         )
     }
-    context.restoreGState()
-
-    // Hairline rim for definition against dark wallpapers.
-    context.saveGState()
-    context.addPath(body)
-    context.setStrokeColor(rgb(255, 255, 255, 0.22))
-    context.setLineWidth(canvas * 0.0045)
-    context.strokePath()
     context.restoreGState()
 
     // MARK: Hub mark

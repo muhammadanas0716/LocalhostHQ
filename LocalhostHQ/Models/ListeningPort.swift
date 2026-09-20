@@ -61,11 +61,15 @@ struct ListeningPort: Sendable, Hashable {
         return families.first == .ipv6 ? "IPv6" : "IPv4"
     }
 
+    /// Dual-stack sockets bind the same textual address on both families, so
+    /// the display collapses duplicates: `*:5000`, never `*:5000, *:5000`.
     var bindingDescription: String {
-        bindings
-            .map { "\($0.address):\(port)" }
-            .sorted()
-            .joined(separator: ", ")
+        var seen: Set<String> = []
+        let unique = bindings.compactMap { binding -> String? in
+            let text = "\(binding.address):\(port)"
+            return seen.insert(text).inserted ? text : nil
+        }
+        return unique.sorted().joined(separator: ", ")
     }
 }
 

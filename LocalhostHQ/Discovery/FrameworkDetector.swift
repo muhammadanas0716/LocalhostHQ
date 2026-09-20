@@ -58,7 +58,18 @@ struct DetectionContext: Sendable {
 /// One piece of evidence for a framework.
 struct DetectionRule: Sendable {
     let weight: Double
+    /// Corroborating rules strengthen a detection but can never establish one
+    /// on their own. A conventional port is the motivating case: something
+    /// listening on 5432 is *probably* Postgres, but calling every unknown
+    /// process on that port "PostgreSQL" would be a fabrication.
+    let isCorroborating: Bool
     let matches: @Sendable (DetectionContext) -> Bool
+
+    init(weight: Double, isCorroborating: Bool = false, matches: @escaping @Sendable (DetectionContext) -> Bool) {
+        self.weight = weight
+        self.isCorroborating = isCorroborating
+        self.matches = matches
+    }
 
     /// A dependency or script token in the package manifest — the strongest
     /// available signal, since it is declared by the project itself.
@@ -99,13 +110,17 @@ struct DetectionRule: Sendable {
         DetectionRule(weight: weight) { $0.manifest?.kind == kind }
     }
 
-    /// Conventional port. Weak on its own — ports are only ever corroboration.
+    /// Conventional port. Corroborating only: never enough by itself.
     static func port(_ port: Int, _ weight: Double = 0.3) -> DetectionRule {
-        DetectionRule(weight: weight) { $0.port == port }
+        DetectionRule(weight: weight, isCorroborating: true) { $0.port == port }
     }
 
-    static func custom(_ weight: Double, _ matches: @escaping @Sendable (DetectionContext) -> Bool) -> DetectionRule {
-        DetectionRule(weight: weight, matches: matches)
+    static func custom(
+        _ weight: Double,
+        isCorroborating: Bool = false,
+        _ matches: @escaping @Sendable (DetectionContext) -> Bool
+    ) -> DetectionRule {
+        DetectionRule(weight: weight, isCorroborating: isCorroborating, matches: matches)
     }
 }
 
@@ -129,12 +144,13 @@ struct FrameworkSignature: Sendable {
         guard !exclusions.contains(where: { $0.matches(context) }) else { return 0 }
 
         var complement = 1.0
-        var matched = false
+        var hasSubstantiveMatch = false
         for rule in rules where rule.matches(context) {
-            matched = true
+            if !rule.isCorroborating { hasSubstantiveMatch = true }
             complement *= (1 - min(max(rule.weight, 0), 0.99))
         }
-        guard matched else { return 0 }
+        // Corroborating evidence alone proves nothing.
+        guard hasSubstantiveMatch else { return 0 }
         return min(1 - complement, 0.99)
     }
 }
